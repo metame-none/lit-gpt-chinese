@@ -1,7 +1,7 @@
 <div align="center">
 <img src="https://pl-public-data.s3.amazonaws.com/assets_lightning/LitStableLM_Badge.png" alt="Lit-GPT" width="128"/>
 
-# ⚡ Lit-GPT
+# ⚡ Lit-GPT-Chinese
 
 <!--
 <p align="center">
@@ -11,61 +11,27 @@
 </p>
 -->
 
-![PyPI - Python Version](https://img.shields.io/pypi/pyversions/pytorch-lightning)
-![cpu-tests](https://github.com/lightning-AI/lit-stablelm/actions/workflows/cpu-tests.yml/badge.svg) [![license](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/Lightning-AI/lit-stablelm/blob/master/LICENSE) [![Discord](https://img.shields.io/discord/1077906959069626439?style=plastic)](https://discord.gg/VptPCZkGNa)
-
-<img src="https://pl-public-data.s3.amazonaws.com/assets_lightning/LitStableLM.gif" alt="Lit-GPT and pineapple pizza" width="500px"/>
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/pytorch-lightning) [![license](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/Lightning-AI/lit-stablelm/blob/master/LICENSE) 
 
 </div>
 
-&nbsp;
 
-# ⚡ Lit-GPT
+<!-- # ⚡ Lit-GPT-Chinese -->
 
-Hackable [implementation](lit_gpt/model.py) of state-of-the-art open-source large language models released under the **Apache 2.0 license**.
+Hackable [implementation](lit_gpt/model.py) of state-of-the-art open-source large language models for **chinese** released under the **Apache 2.0 license**.
 
-Supports the following popular model checkpoints:
+Supports the following popular model checkpoints (along with all the english models supported by official Lit-GPT):
 
 | Model and usage                                                                   | Model size                               | Reference                                                                                        |
 |-----------------------------------------------------------------------------------|------------------------------------------|--------------------------------------------------------------------------------------------------|
-| EleutherAI [Pythia](tutorials/download_pythia.md)                                 | {14,31,70,160,410}M, {1,1.4,2.8,6.9,12}B | [Biderman et al. 2023](https://arxiv.org/abs/2304.01373)                                         |
-| LMSYS [LongChat](tutorials/download_longchat.md)                                  | 7B, 13B                                  | [LongChat Team 2023](https://lmsys.org/blog/2023-06-29-longchat/)                                |
-| LMSYS [Vicuna](tutorials/download_vicuna.md)                                      | 7B, 13B, 33B                             | [Li et al. 2023](https://lmsys.org/blog/2023-03-30-vicuna/)                                      |
-| Meta AI [Code Llama](tutorials/download_code_llama.md)                            | 7B, 13B, 34B                             | [Rozière et al. 2023](https://arxiv.org/abs/2308.12950)                                          |
-| Meta AI [Llama 2](tutorials/download_llama_2.md)                                  | 7B, 13B, 70B                             | [Touvron et al. 2023](https://arxiv.org/abs/2307.09288)                                          |
-| Mistral AI [Mistral and Mixtral](tutorials/download_mistral.md)                   | 7B                                       | [Mistral  website](https://mistral.ai/)                                                          |
-| Microsoft Research [Phi](tutorials/download_phi.md)                               | 1.3B, 2.7B                               | [Li et al. 2023](https://arxiv.org/abs/2309.05463)                                               |
-| NousResearch Nous-Hermes                                                          | 7B, 13B, 70B                             | [Org page](https://huggingface.co/NousResearch)                                                  |
-| OpenLM Research [OpenLLaMA](tutorials/download_openllama.md)                      | 3B, 7B, 13B                              | [Geng & Liu 2023](https://github.com/openlm-research/open_llama)                                 |
-| Platypus                                                                          | 7B, 13B, 70B                             | [Lee, Hunter, and Ruiz 2023](https://arxiv.org/abs/2308.07317)                                   |
-| Stability AI StableCode                                                           | 3B                                       | [Stability AI 2023](https://stability.ai/blog/stablecode-llm-generative-ai-coding)               |
-| Stability AI [FreeWilly2](tutorials/download_freewilly_2.md) (Stable Beluga 2)    | 70B                                      | [Stability AI 2023](https://stability.ai/blog/stable-beluga-large-instruction-fine-tuned-models) |
-| Stability AI [StableLM](tutorials/download_stablelm.md)                           | 3B, 7B                                   | [Stability AI 2023](https://github.com/Stability-AI/StableLM)                                    |
-| Stability AI [StableLM Zephyr](tutorials/download_stablelm.md)                    | 3B                                       | [Stability AI 2023](https://stability.ai/blog/stablecode-llm-generative-ai-coding)               |
-| TII UAE [Falcon](tutorials/download_falcon.md)                                    | 7B, 40B, 180B                            | [TII 2023](https://falconllm.tii.ae)                                                             |
-| [TinyLlama](tutorials/download_tinyllama.md)                                      | 1.1B                                     | [Zhang et al. 2023](https://github.com/jzhang38/TinyLlama)                                       |
-| Together [RedPajama-INCITE](tutorials/download_redpajama_incite.md)               | 3B, 7B                                   | [Together 2023](https://together.ai/blog/redpajama-models-v1)                                    |
-| Trelis [Function Calling Llama 2](tutorials/download_function_calling_llama_2.md) | 7B                                       | [Trelis et al. 2023](https://huggingface.co/Trelis/Llama-2-7b-chat-hf-function-calling-v2)       |
+| Baichuan 2                                | 7B-Chat | [Baichuan 2](https://github.com/baichuan-inc/Baichuan2)                                         |
+| ChatGLM3                                 | 6B, 6B-Base, 6B-32k | [ChatGLM3](https://github.com/THUDM/ChatGLM3)                                         |
+| ChatGLM2                                 | 6B | [ChatGLM2-6B](https://github.com/THUDM/ChatGLM2-6B)                                         |
+
 
 This implementation extends on [Lit-LLaMA](https://github.com/lightning-AI/lit-llama) and [nanoGPT](https://github.com/karpathy/nanoGPT), and it's **powered by [Lightning Fabric](https://lightning.ai/docs/fabric/stable/) ⚡**.
 
 &nbsp;
-
----
-
-**🏆 NeurIPS 2023 Large Language Model Efficiency Challenge: 1 LLM + 1 GPU + 1 Day**
-
-The Lit-GPT repository is the official starter kit for the [NeurIPS 2023 LLM Efficiency Challenge](https://llm-efficiency-challenge.github.io), which is a competition focused on finetuning an existing non-instruction tuned LLM for 24 hours on a single GPU. The competition has two tracks, one for the A100 and another for the 4090 GPUs.
-
-If you are interested in participating, you can learn more about the NeurIPS LLM Efficiency Challenge on the official website [here](https://llm-efficiency-challenge.github.io). Also see the [Lit-GPT NeurIPS Challenge Quickstart Guide](tutorials/neurips_challenge_quickstart.md) for helpful tips.
-
-**The submission deadline is Oct 25th, 2023.**
-
----
-
-
-&nbsp;
-
 
 ## Lit-GPT design principles
 
@@ -82,19 +48,13 @@ Avoiding code duplication is **not** a goal. **Readability** and **hackability**
 
 &nbsp;
 
-## Get involved!
-
-[Join our Discord](https://discord.gg/VptPCZkGNa) to build high-performance, truly open-source models for the common benefit of the community.
-
-&nbsp;
-
 ## Setup
 
 Clone the repo:
 
 ```bash
-git clone https://github.com/Lightning-AI/lit-gpt
-cd lit-gpt
+git clone https://github.com/metame-none/lit-gpt-chinese
+cd lit-gpt-chinese
 ```
 
 Install the minimal dependencies:
@@ -125,40 +85,77 @@ You are all set! 🎉
 
 ## Use the model
 
-To generate text predictions, you need to download the model weights. **If you don't have them, check out our [guide](tutorials/download_stablelm.md).**
+**Take ChatGLM3-6B as an example:**
 
-Run inference:
-
+1. Download repo and checkpoints (manually or using `git lfs`):
 ```bash
-python generate/base.py --prompt "Hello, my name is"
+GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/THUDM/chatglm3-6b $path
+```
+2. Convert the checkpoint to the Lit-GPT format:
+```bash
+ln -snf $path checkpoints/chatglm/chatglm3-6b-hf
+
+python scripts/convert_hf_checkpoint.py --checkpoint_dir ./checkpoints/chatglm/chatglm3-6b-hf
+```
+3. Iteratively generate responses:
+```bash
+python chat/base.py --checkpoint_dir ./checkpoints/chatglm/chatglm3-6b-hf  --precision "16-true"
 ```
 
-This will run the 3B pretrained model and require ~7 GB of GPU memory using the `bfloat16` datatype.
+<details>
+<summary> Optional: check the lit-gpt model is numerically equivalent to the original model. </summary>
 
-[Full guide for generating samples from the model](tutorials/inference.md).
+- make the following changes to the original model (modeling_chatglm.py):
 
-You can also chat with the model interactively:
+```diff
+-from .configuration_chatglm import ChatGLMConfig
++from configuration_chatglm import ChatGLMConfig
+
+ # flags required to enable jit fusion kernels
+
+@@ -157,7 +157,7 @@ class RotaryEmbedding(nn.Module):
+         )
+
+
+-@torch.jit.script
++# @torch.jit.script
+ def apply_rotary_pos_emb(x: torch.Tensor, rope_cache: torch.Tensor) -> torch.Tensor:
+```
+- check the model difference:
 
 ```bash
-python chat/base.py
+CUDA_VISIBLE_DEVICES=0,1 python tests/test_chatglm3.py model_diff ./checkpoints/chatglm/chatglm3-6b-hf
 ```
 
-&nbsp;
+- for baichuan2 model:
+```diff
+--- a/modeling_baichuan.py
++++ b/modeling_baichuan.py
+@@ -20,8 +20,8 @@
+ # limitations under the License.
 
-### Run large models on smaller consumer devices
 
-We support 4-bit quantization (as in QLoRA), (bnb.nf4, bnb.nf4-dq, bnb.fp4, bnb.fp4-dq, gptq.int4) and 8-bit quantization (bnb.int8) for inference by following [this guide](tutorials/quantize.md).
+-from .configuration_baichuan import BaichuanConfig
+-from .generation_utils import build_chat_input, TextIterStreamer
++from configuration_baichuan import BaichuanConfig
++from generation_utils import build_chat_input, TextIterStreamer
+
+ import math
+ from typing import List, Optional, Tuple, Union
+```
+
+</details>
 
 &nbsp;
 
 ## Finetune the model
 
-We provide a simple training scripts (`finetune/adapter.py`, `finetune/adapter_v2.py`, and `finetune/lora.py`) that instruction-tunes a pretrained model on the [Alpaca](https://github.com/tatsu-lab/stanford_alpaca) dataset.
+We provide a simple training scripts (`finetune/adapter.py`, `finetune/adapter_v2.py`, and `finetune/lora.py`) that instruction-tunes a pretrained model on the random 10k samples from [multiturn_chat_0.8M](https://huggingface.co/datasets/BelleGroup/multiturn_chat_0.8M) dataset.
 
 1. Download the data and generate an instruction tuning dataset:
 
 ```bash
-python scripts/prepare_alpaca.py
+python scripts/prepare_belle_chatglm3.py
 ```
 
 2. Run the finetuning script
@@ -168,114 +165,36 @@ For example, you can either use
 Adapter ([Zhang et al. 2023](https://arxiv.org/abs/2303.16199)):
 
 ```bash
-python finetune/adapter.py
+python finetune/adapter.py --data_dir ./data/belle_chat_ramdon_10k_chatglm3 --checkpoint_dir ./checkpoints/chatglm/chatglm3-6b-hf --out_dir out/adapter/belle_chatglm3_6b --precision "bf16-true"
+
+# test the finetuned model
+python chat/adapter.py --adapter_path ./out/adapter/belle_chatglm3_6b/lit_model_adapter_finetuned.pth --checkpoint_dir ./checkpoints/chatglm/chatglm3-6b-hf --precision "16-true"
 ```
 
 or Adapter v2 ([Gao et al. 2023](https://arxiv.org/abs/2304.15010)):
 
 ```bash
-python finetune/adapter_v2.py
+python finetune/adapter_v2.py --data_dir ./data/belle_chat_ramdon_10k_chatglm3 --checkpoint_dir ./checkpoints/chatglm/chatglm3-6b-hf --out_dir out/adapter_v2/belle_chatglm3_6b --precision "bf16-true"
+
+# test the finetuned model
+python chat/adapter_v2.py --adapter_path ./out/adapter_v2/belle_chatglm3_6b/lit_model_adapter_finetuned.pth --checkpoint_dir ./checkpoints/chatglm/chatglm3-6b-hf --precision "16-true"
 ```
 
 or LoRA ([Hu et al. 2021](https://arxiv.org/abs/2106.09685)):
 
 ```bash
-python finetune/lora.py
+python finetune/lora.py --data_dir ./data/belle_chat_ramdon_10k_chatglm3 --checkpoint_dir ./checkpoints/chatglm/chatglm3-6b-hf --out_dir out/lora/belle_chatglm3_6b --precision "16-true"
+
+# test the finetuned model
+python chat/lora.py --lora_path ./out/lora/belle_chatglm3_6b/lit_model_lora_finetuned.pth --checkpoint_dir ./checkpoints/chatglm/chatglm3-6b-hf  --precision "16-true"
 ```
 
 (Please see the [tutorials/finetune_adapter](tutorials/finetune_adapter.md) for details on the differences between the two adapter methods.)
 
-The finetuning requires at least one GPU with ~12 GB memory (RTX 3060).
+## Reference
 
-It is expected that you have downloaded the pretrained weights as described above.
-More details about each finetuning method and how you can apply it to your own data can be found in our technical how-to guides.
-
-&nbsp;
-
-### Finetuning how-to guides
-
-These technical tutorials illustrate how to run the finetuning code.
-
-- [Finetune with Adapters](tutorials/finetune_adapter.md)
-- [Finetune with LoRA or QLoRA](tutorials/finetune_lora.md)
-
-&nbsp;
-
-### Understanding finetuning -- conceptual tutorials
-
-Looking for conceptual tutorials and explanations? We have some additional articles below:
-
-- [Understanding Parameter-Efficient Finetuning of Large Language Models: From Prefix Tuning to LLaMA-Adapters](https://lightning.ai/pages/community/article/understanding-llama-adapters/)
-
-- [Parameter-Efficient LLM Finetuning With Low-Rank Adaptation (LoRA)](https://lightning.ai/pages/community/tutorial/lora-llm/)
-
-&nbsp;
-
-## Pretraining
-
-We provide simple training scripts based on Fabric if you want to venture into pretraining. Conversion scripts for our optimized streaming `PackedDataset` are included.
-
-Follow this guide to start pretraining on
-
-- [RedPajama, a reproduction of LLaMA's training set](tutorials/pretrain_redpajama.md)
-- [OpenWeb Text, a reproduction of GPT-2's dataset](tutorials/pretrain_openwebtext.md)
-
-
-
-&nbsp;
-
-
-## Supported datasets
-
-Lit-GPT includes a variety of dataset preparation scripts for finetuning and pretraining. Additional information about the datasets and dataset preparation is provided in the [Preparing Datasets](tutorials/prepare_dataset.md) tutorial.
-
-
-&nbsp;
-
-## XLA
-
-Lightning AI has partnered with Google to add first-class support for [Cloud TPUs](https://cloud.google.com/tpu) in [Lightning’s frameworks](https://github.com/Lightning-AI/lightning) and Lit-GPT,
-helping democratize AI for millions of developers and researchers worldwide.
-
-Using TPUs with Lightning is as straightforward as changing one line of code.
-
-We provide scripts fully optimized for TPUs in the [XLA directory](xla)
-
-&nbsp;
-
-## Get involved!
-
-We are on a quest towards fully open source AI.
-
-<img align="right" src="https://pl-public-data.s3.amazonaws.com/assets_lightning/LitStableLM_Illustration.png" alt="Lit-GPT" width="128"/>
-
-Join us and start contributing, especially on the following areas:
-
-- [ ] [Pretraining](https://github.com/Lightning-AI/lit-gpt/labels/pre-training)
-- [ ] [Fine-tuning](https://github.com/Lightning-AI/lit-gpt/labels/fine-tuning)
-- [ ] [Quantization](https://github.com/Lightning-AI/lit-gpt/labels/quantization)
-- [ ] [Sparsification](https://github.com/Lightning-AI/lit-gpt/labels/sparsification)
-
-We welcome all individual contributors, regardless of their level of experience or hardware. Your contributions are valuable, and we are excited to see what you can accomplish in this collaborative and supportive environment.
-
-Unsure about contributing? Check out our [How to Contribute to Lit-GPT and Lit-LLaMA
-](https://lightning.ai/pages/community/tutorial/how-to-contribute-to-litgpt/) guide.
-
-Don't forget to [join our Discord](https://discord.gg/VptPCZkGNa)!
-
-&nbsp;
-
-## Acknowledgements
-
-- [@karpathy](https://github.com/karpathy) for [nanoGPT](https://github.com/karpathy/nanoGPT)
-- [@EleutherAI](https://github.com/EleutherAI) for [GPT-NeoX](https://github.com/EleutherAI/gpt-neox) and the [Evaluation Harness](https://github.com/EleutherAI/lm-evaluation-harness)
-- [@TimDettmers](https://github.com/TimDettmers) for [bitsandbytes](https://github.com/TimDettmers/bitsandbytes)
-- [@IST-DASLab](https://github.com/IST-DASLab) for [GPTQ](https://github.com/IST-DASLab/gptq)
-- [@Microsoft](https://github.com/microsoft) for [LoRA](https://github.com/microsoft/LoRA)
-- [@tridao](https://github.com/tridao) for [Flash Attention 2](https://github.com/Dao-AILab/flash-attention)
-
-&nbsp;
+For more details, please refer to the [Lit-GPT](https://github.com/Lightning-AI/lit-gpt)
 
 ## License
 
-Lit-GPT is released under the [Apache 2.0](https://github.com/Lightning-AI/lit-gpt/blob/main/LICENSE) license.
+Lit-GPT-Chinese is released under the [Apache 2.0](https://github.com/Lightning-AI/lit-gpt/blob/main/LICENSE) license.
