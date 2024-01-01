@@ -50,13 +50,24 @@ class Config:
     shared_attention_norm: bool = False
     _norm_class: Literal["LayerNorm", "RMSNorm"] = "LayerNorm"
     norm_eps: float = 1e-5
-    _mlp_class: Literal["GptNeoxMLP", "LLaMAMLP"] = "GptNeoxMLP"
+    _mlp_class: Literal["GptNeoxMLP", "LLaMAMLP", "ChatGLM2MLP"] = "GptNeoxMLP"
     gelu_approximate: str = "none"
     intermediate_size: Optional[int] = None
     rope_condense_ratio: int = 1
     rope_base: int = 10000
     n_expert: int = 0
     n_expert_per_token: int = 0
+
+    # setting related to chatglm
+    add_qkv_bias: Optional[bool] = None
+    add_attention_scale: bool = True
+    rope_dtype: Optional[torch.dtype] = None
+    rope_out_dtype: Optional[torch.dtype] = None
+    rope_type: str = "default"
+
+    # setting related to baichuan2
+    pad_token_id: Optional[int] = None
+    lm_head_type: str = "linear"
 
     def __post_init__(self):
         if not self.name:
@@ -83,6 +94,9 @@ class Config:
             if self._mlp_class == "LLaMAMLP":
                 raise ValueError("The config needs to set the `intermediate_size`")
             self.intermediate_size = 4 * self.n_embd
+
+        if self.add_qkv_bias is None:
+            self.add_qkv_bias = self.bias
 
         self.rope_n_elem = int(self.rotary_percentage * self.head_size)
 
@@ -1246,6 +1260,107 @@ for c in tiny_llama:
         copy["name"] = c["name"].format(kind)
         copy["hf_config"]["name"] = c["hf_config"]["name"].format(hf_postfix)
         configs.append(copy)
+
+###############
+# THUDM chatglm 2
+###############
+chatglm_2 = [
+    # https://huggingface.co/THUDM/chatglm2-6b/blob/main/config.json
+    dict(
+        # org="thudm",
+        name="chatglm2-6b-hf",
+        block_size=32768,
+        padded_vocab_size=65024,
+        bias=False,
+        add_qkv_bias=True,
+        n_layer=28,
+        n_head=32,
+        n_embd=4096,
+        rotary_percentage=0.5,
+        n_query_groups=2,
+        intermediate_size=13696,
+        parallel_residual=False,
+        norm_eps=1e-5,
+        _norm_class="RMSNorm",
+        _mlp_class="ChatGLM2MLP",
+        add_attention_scale=False,
+        rope_dtype="float16",
+        rope_type="chatglm",
+    )
+]
+configs.extend(chatglm_2)
+
+###############
+# Baichuan baichuan 2
+###############
+baichuan_2 = [
+    # https://huggingface.co/baichuan-inc/Baichuan2-7B-Chat/blob/main/config.json
+    dict(
+        # org="baichuan",
+        name="baichuan2-7b-chat-hf",
+        block_size=4096,
+        # vocab_size
+        padded_vocab_size=125696,
+        bias=False,
+        n_layer=32,
+        n_head=32,
+        n_embd=4096,
+        rotary_percentage=1,
+        intermediate_size=11008,
+        parallel_residual=False,
+        norm_eps=1e-6,
+        _norm_class="RMSNorm",
+        _mlp_class="LLaMAMLP",
+        add_attention_scale=False,
+        rope_dtype="float32",
+        rope_type="baichuan",
+        pad_token_id=0,
+        lm_head_type="norm_head",
+    )
+]
+configs.extend(baichuan_2)
+
+
+###############
+# THUDM chatglm 3
+###############
+# https://huggingface.co/THUDM/chatglm3-6b/blob/main/config.json
+_base_chatglm3_config = dict(
+        # org="thudm",
+        name="chatglm3-6b-hf",
+        block_size=8192,
+        padded_vocab_size=65024,
+        bias=False,
+        add_qkv_bias=True,
+        n_layer=28,
+        n_head=32,
+        n_embd=4096,
+        rotary_percentage=0.5,
+        n_query_groups=2,
+        intermediate_size=13696,
+        parallel_residual=False,
+        norm_eps=1e-5,
+        _norm_class="RMSNorm",
+        _mlp_class="ChatGLM2MLP",
+        add_attention_scale=False,
+        rope_dtype="float32",
+        rope_out_dtype="float16",
+        rope_type="chatglm",
+    )
+configs.append(_base_chatglm3_config)
+# chatglm3-32k
+# https://huggingface.co/THUDM/chatglm3-6b-32k/blob/main/config.json
+_chatglm3_32k = deepcopy(_base_chatglm3_config)
+_chatglm3_32k["name"] = "chatglm3-6b-32k-hf"
+_chatglm3_32k["rope_base"] = 500000
+_chatglm3_32k["block_size"] = 32768
+configs.append(_chatglm3_32k)
+# chatglm3-32k-base
+# https://huggingface.co/THUDM/chatglm3-6b-base/blob/main/config.json
+_chatglm3_base = deepcopy(_base_chatglm3_config)
+_chatglm3_base["name"] = "chatglm3-6b-base-hf"
+_chatglm3_32k["block_size"] = 32768
+configs.append(_chatglm3_base)
 
 
 ##########################

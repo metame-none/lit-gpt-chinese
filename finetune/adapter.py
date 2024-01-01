@@ -36,10 +36,10 @@ devices = 1
 # Hyperparameters
 learning_rate = 3e-3
 batch_size = 64 / devices
-micro_batch_size = 4
+micro_batch_size = 2
 gradient_accumulation_iters = batch_size // micro_batch_size
 assert gradient_accumulation_iters > 0
-max_seq_length = None  # assign value to truncate
+max_seq_length = 1024  # assign value to truncate
 epoch_size = 50000  # train dataset size
 num_epochs = 5
 max_iters = num_epochs * (epoch_size // micro_batch_size) // devices

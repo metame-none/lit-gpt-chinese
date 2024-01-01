@@ -16,6 +16,7 @@ wd = Path(__file__).parent.parent.resolve()
 sys.path.append(str(wd))
 
 from generate.base import generate
+from chat import base as chat_base
 from lit_gpt.lora import GPT, Block, Config, lora_filter, mark_only_lora_as_trainable
 from lit_gpt.tokenizer import Tokenizer
 from lit_gpt.utils import (
@@ -37,11 +38,11 @@ devices = 1
 # Hyperparameters
 learning_rate = 3e-4
 batch_size = 128
-micro_batch_size = 4
+micro_batch_size = 2
 gradient_accumulation_iters = batch_size // micro_batch_size
 assert gradient_accumulation_iters > 0
-max_seq_length = None  # assign value to truncate
-max_iters = 50000  # train dataset size
+max_seq_length = 1024  # assign value to truncate
+max_iters = 10000  # train dataset size
 weight_decay = 0.01
 lora_r = 8
 lora_alpha = 16
@@ -55,6 +56,8 @@ lora_head = False
 warmup_steps = 100
 
 hparams = {k: v for k, v in locals().items() if isinstance(v, (int, float, str)) and not k.startswith("_")}
+
+gen_example = True
 
 
 def setup(
@@ -244,6 +247,10 @@ def validate(fabric: L.Fabric, model: GPT, val_data: List[Dict], tokenizer: Toke
         logits = model(input_ids)
         losses[k] = chunked_cross_entropy(logits[..., :-1, :], targets[..., 1:], chunk_size=0)
     val_loss = losses.mean()
+
+    if not gen_example:
+        model.train()
+        return val_loss
 
     # produce an example:
     instruction = "Recommend a movie for me to watch during the weekend and explain the reason."

@@ -12,6 +12,7 @@ import torch.nn as nn
 from typing_extensions import Self
 
 from lit_gpt.config import Config
+import torch.nn.functional as F
 
 
 class GPT(nn.Module):
@@ -20,12 +21,15 @@ class GPT(nn.Module):
         assert config.padded_vocab_size is not None
         self.config = config
 
-        self.lm_head = nn.Linear(config.n_embd, config.padded_vocab_size, bias=config.lm_head_bias)
+        if config.lm_head_type == "linear":
+            self.lm_head = nn.Linear(config.n_embd, config.padded_vocab_size, bias=config.lm_head_bias)
+        elif config.lm_head_type == "norm_head":
+            self.lm_head = NormHead(config.n_embd, config.padded_vocab_size, bias=config.lm_head_bias)
         self.transformer = nn.ModuleDict(
             dict(
-                wte=nn.Embedding(config.padded_vocab_size, config.n_embd),
+                wte=nn.Embedding(config.padded_vocab_size, config.n_embd, config.pad_token_id),
                 h=nn.ModuleList(Block(config) for _ in range(config.n_layer)),
-                ln_f=config.norm_class(config.n_embd, eps=config.norm_eps),
+                ln_f=get_norm_func(config),
             )
         )
         self.max_seq_length = self.config.block_size
@@ -89,6 +93,7 @@ class GPT(nn.Module):
         x = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
         for block in self.transformer.h:
             x = block(x, cos, sin, mask, input_pos)
+
         x = self.transformer.ln_f(x)
         return self.lm_head(x)  # (b, t, vocab_size)
 
@@ -97,12 +102,23 @@ class GPT(nn.Module):
         return cls(Config.from_name(name, **kwargs))
 
     def rope_cache(self, device: Optional[torch.device] = None) -> Tuple[torch.Tensor, torch.Tensor]:
+        dtype = torch.get_default_dtype()
+        if self.config.rope_dtype is not None:
+            dtype = self.config.rope_dtype
+            if isinstance(dtype, str):
+                dtype = getattr(torch, dtype)
+
+        if "baichuan2" in self.config.name:
+            device = "cpu"
         return build_rope_cache(
             seq_len=self.max_seq_length,
             n_elem=self.config.rope_n_elem,
+            dtype=dtype,
+            # NOTE: baichuan2 init with device=None, convert to device=input.device during computing
             device=device,
             condense_ratio=self.config.rope_condense_ratio,
             base=self.config.rope_base,
+            out_dtype=self.config.rope_out_dtype,
         )
 
     def set_kv_cache(
@@ -136,9 +152,9 @@ class GPT(nn.Module):
 class Block(nn.Module):
     def __init__(self, config: Config) -> None:
         super().__init__()
-        self.norm_1 = config.norm_class(config.n_embd, eps=config.norm_eps)
+        self.norm_1 = get_norm_func(config)
         self.attn = CausalSelfAttention(config)
-        self.norm_2 = None if config.shared_attention_norm else config.norm_class(config.n_embd, eps=config.norm_eps)
+        self.norm_2 = None if config.shared_attention_norm else get_norm_func(config)
         self.mlp = config.mlp_class(config)
 
         self.config = config
@@ -172,7 +188,8 @@ class CausalSelfAttention(nn.Module):
         super().__init__()
         shape = (config.n_head + 2 * config.n_query_groups) * config.head_size
         # key, query, value projections for all heads, but in a batch
-        self.attn = nn.Linear(config.n_embd, shape, bias=config.bias)
+        attn_bias = config.add_qkv_bias
+        self.attn = nn.Linear(config.n_embd, shape, bias=attn_bias)
         # output projection
         self.proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
         # disabled by default
@@ -212,8 +229,8 @@ class CausalSelfAttention(nn.Module):
         k = k.reshape(B, -1, T, self.config.head_size)  # (B, nh_k, T, hs)
         v = v.reshape(B, -1, T, self.config.head_size)  # (B, nh_v, T, hs)
 
-        q_roped = apply_rope(q[..., : self.config.rope_n_elem], cos, sin)
-        k_roped = apply_rope(k[..., : self.config.rope_n_elem], cos, sin)
+        q_roped = apply_rope(q[..., : self.config.rope_n_elem], cos, sin, self.config.rope_type)
+        k_roped = apply_rope(k[..., : self.config.rope_n_elem], cos, sin, self.config.rope_type)
         q = torch.cat((q_roped, q[..., self.config.rope_n_elem :]), dim=-1)
         k = torch.cat((k_roped, k[..., self.config.rope_n_elem :]), dim=-1)
 
@@ -233,8 +250,11 @@ class CausalSelfAttention(nn.Module):
         self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         scale = 1.0 / math.sqrt(self.config.head_size)
+        if not self.config.add_attention_scale:
+            scale = None
+        is_causal = mask is None
         y = torch.nn.functional.scaled_dot_product_attention(
-            q, k, v, attn_mask=mask, dropout_p=0.0, scale=scale, is_causal=mask is None
+            q, k, v, attn_mask=mask, dropout_p=0.0, scale=scale, is_causal=is_causal
         )
         return y.transpose(1, 2)
 
@@ -290,6 +310,49 @@ class LLaMAMLP(nn.Module):
         return self.proj(x)
 
 
+class ChatGLM2MLP(nn.Module):
+    def __init__(self, config: Config) -> None:
+        super().__init__()
+        self.add_bias = config.bias
+        self.dense_h_to_4h = nn.Linear(config.n_embd, config.intermediate_size * 2,
+                                       bias=self.add_bias)
+
+        def swiglu(x):
+            x = torch.chunk(x, 2, dim=-1)
+            return F.silu(x[0]) * x[1]
+
+        self.activation_func = swiglu
+
+        self.dense_4h_to_h = nn.Linear(config.intermediate_size, config.n_embd,
+                                       bias=self.add_bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.dense_h_to_4h(x)
+        x = self.activation_func(x)
+        out = self.dense_4h_to_h(x)
+        return out
+
+
+class NormHead(nn.Module):
+    def __init__(self, hidden_size, vocab_size, bias=False):
+        super().__init__()
+        self.weight = nn.Parameter(torch.empty((vocab_size, hidden_size)))
+        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        self.first_flag = True
+
+    def forward(self, hidden_states):
+        if self.training:
+            norm_weight = nn.functional.normalize(self.weight)
+            self.first_flag = True
+        elif self.first_flag:
+            self.first_flag = False
+            self.weight.data = nn.functional.normalize(self.weight)
+            norm_weight = self.weight
+        else:
+            norm_weight = self.weight
+        return nn.functional.linear(hidden_states, norm_weight)
+
+
 class LLaMAMoE(nn.Module):
     def __init__(self, config: Config) -> None:
         super().__init__()
@@ -318,7 +381,8 @@ class LLaMAMoE(nn.Module):
 
 
 def build_rope_cache(
-    seq_len: int, n_elem: int, device: Optional[torch.device] = None, base: int = 10000, condense_ratio: int = 1
+    seq_len: int, n_elem: int, dtype: torch.dtype, device: Optional[torch.device] = None, base: int = 10000, condense_ratio: int = 1,
+    out_dtype: Optional[torch.dtype] = None
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Enhanced Transformer with Rotary Position Embedding.
 
@@ -326,25 +390,63 @@ def build_rope_cache(
     transformers/rope/__init__.py. MIT License:
     https://github.com/labmlai/annotated_deep_learning_paper_implementations/blob/master/license.
     """
+    if out_dtype is None:
+        out_dtype = dtype
+    if isinstance(out_dtype, str):
+        out_dtype = getattr(torch, out_dtype)
+    # for chatglm n_elem is 64
     # $\Theta = {\theta_i = 10000^{\frac{2(i-1)}{d}}, i \in [1, 2, ..., \frac{d}{2}]}$
-    theta = 1.0 / (base ** (torch.arange(0, n_elem, 2, device=device).float() / n_elem))
+    theta = 1.0 / (base ** (torch.arange(0, n_elem, 2, dtype=dtype, device=device) / n_elem))
 
     # Create position indexes `[0, 1, ..., seq_len - 1]`
-    seq_idx = torch.arange(seq_len, device=device) / condense_ratio
+    seq_idx = torch.arange(seq_len, dtype=dtype, device=device) / condense_ratio
 
     # Calculate the product of position index and $\theta_i$
+    # NOTE: chatglm convert idx_theta with float()
     idx_theta = torch.outer(seq_idx, theta).repeat(1, 2)
 
-    return torch.cos(idx_theta), torch.sin(idx_theta)
+    cos, sin = torch.cos(idx_theta), torch.sin(idx_theta)
+
+    # this is to mimic the behaviour of complex32, else we will get different results
+    if out_dtype in (torch.float16, torch.bfloat16, torch.int8):
+        return (cos.bfloat16(), sin.bfloat16()) if dtype == torch.bfloat16 else (cos.half(), sin.half())
+    return cos, sin
 
 
-def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
-    head_size = x.size(-1)
-    x1 = x[..., : head_size // 2]  # (B, nh, T, hs/2)
-    x2 = x[..., head_size // 2 :]  # (B, nh, T, hs/2)
-    rotated = torch.cat((-x2, x1), dim=-1)  # (B, nh, T, hs)
-    roped = (x * cos) + (rotated * sin)
-    return roped.to(dtype=x.dtype)
+def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor, rope_type: str = "default") -> torch.Tensor:
+    if cos.device != x.device:
+        cos = cos.to(x.device)
+        sin = sin.to(x.device)
+    if rope_type == "default":
+        head_size = x.size(-1)
+        x1 = x[..., : head_size // 2]  # (B, nh, T, hs/2)
+        x2 = x[..., head_size // 2 :]  # (B, nh, T, hs/2)
+        rotated = torch.cat((-x2, x1), dim=-1)  # (B, nh, T, hs)
+        roped = (x * cos) + (rotated * sin)
+    elif rope_type == 'baichuan':
+        head_size = x.size(-1)
+        x1 = x[..., : head_size // 2]  # (B, nh, T, hs/2)
+        x2 = x[..., head_size // 2 :]  # (B, nh, T, hs/2)
+        rotated = torch.cat((-x2, x1), dim=-1)  # (B, nh, T, hs)
+        # baichuan2 convert to float() to apply rope
+        roped = (x.float() * cos) + (rotated.float() * sin)
+    elif rope_type == "chatglm":
+        # for chatglm it add: @torch.jit.script to apply_rope, make the result different
+        B, nh, T, head_size = x.shape
+        x = x.reshape(B, nh, T, head_size // 2, 2)  # (B, nh, T, hs/2, 2)
+        x1, x2 = x[..., 0], x[..., 1]
+        x = torch.cat((x1, x2), dim=-1)
+        rotated = torch.cat((-x2, x1), dim=-1)  # (B, nh, T, hs)
+        roped = (x * cos) + (rotated * sin)
+        roped = roped.reshape(B, nh, T, 2, head_size//2)
+        roped = roped.permute(0, 1, 2, 4, 3)
+        roped = roped.reshape(B, nh, T, head_size)
+    return roped.type_as(x)
+
+
+def get_norm_func(config: Config) -> nn.Module:
+    ln_func = config.norm_class(config.n_embd, eps=config.norm_eps)
+    return ln_func
 
 
 class KVCache(nn.Module):

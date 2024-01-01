@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 from typing_extensions import Self
 
+import lit_gpt
 from lit_gpt.config import Config as BaseConfig
 from lit_gpt.model import GPT as BaseModel
 from lit_gpt.model import Block as BaseBlock
@@ -34,10 +35,13 @@ class GPT(BaseModel):
         assert config.padded_vocab_size is not None
         self.config = config
 
-        self.lm_head = nn.Linear(config.n_embd, config.padded_vocab_size, bias=config.lm_head_bias)
+        if config.lm_head_type == "linear":
+            self.lm_head = nn.Linear(config.n_embd, config.padded_vocab_size, bias=config.lm_head_bias)
+        elif config.lm_head_type == "norm_head":
+            self.lm_head = lit_gpt.model.NormHead(config.n_embd, config.padded_vocab_size, bias=config.lm_head_bias)
         self.transformer = nn.ModuleDict(
             dict(
-                wte=nn.Embedding(config.padded_vocab_size, config.n_embd),
+                wte=nn.Embedding(config.padded_vocab_size, config.n_embd, config.pad_token_id),
                 h=nn.ModuleList(Block(config, i) for i in range(config.n_layer)),
                 ln_f=config.norm_class(config.n_embd, eps=config.norm_eps),
             )
@@ -53,8 +57,9 @@ class GPT(BaseModel):
             raise ValueError(f"Cannot forward sequence of length {T}, max seq length is only {self.max_seq_length}.")
 
         if input_pos is not None:  # use the kv cache
-            cos = self.cos.index_select(0, input_pos)
-            sin = self.sin.index_select(0, input_pos)
+            _device = self.cos.device
+            cos = self.cos.index_select(0, input_pos.to(_device))
+            sin = self.sin.index_select(0, input_pos.to(_device))
             if self.mask_cache is None:
                 raise TypeError("You need to call `gpt.set_kv_cache()`")
             mask = self.mask_cache.index_select(2, input_pos)
@@ -107,7 +112,8 @@ class CausalSelfAttention(BaseCausalSelfAttention):
         super().__init__(config)
         if block_idx >= config.adapter_start_layer:
             # adapter embedding layer
-            self.adapter_wte = nn.Embedding(config.adapter_prompt_length, config.n_embd)
+            self.adapter_wte = nn.Embedding(config.adapter_prompt_length, 
+                                            config.n_embd, config.pad_token_id)
             # gate for adaption
             self.gating_factor = torch.nn.Parameter(torch.zeros(1, 1, config.n_head, 1))
             # kv cache for inference
