@@ -24,7 +24,7 @@ Supports the following popular model checkpoints (along with all the english mod
 
 | Model and usage                                                                   | Model size                               | Reference                                                                                        |
 |-----------------------------------------------------------------------------------|------------------------------------------|--------------------------------------------------------------------------------------------------|
-| Baichuan 2                                | 7B-Chat | [Baichuan 2](https://github.com/baichuan-inc/Baichuan2)                                         |
+| Baichuan 2                                | 7B-Chat/Base, 13B-Chat/Base | [Baichuan 2](https://github.com/baichuan-inc/Baichuan2)                                         |
 | ChatGLM3                                 | 6B, 6B-Base, 6B-32k | [ChatGLM3](https://github.com/THUDM/ChatGLM3)                                         |
 | ChatGLM2                                 | 6B | [ChatGLM2-6B](https://github.com/THUDM/ChatGLM2-6B)                                         |
 
