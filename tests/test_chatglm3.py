@@ -4,6 +4,7 @@ import os
 import time
 import json
 import torch
+import importlib
 import numpy as np
 import lightning as L
 from pathlib import Path
@@ -24,8 +25,10 @@ import gc
 
 def model_diff(hf_root):
 
-    sys.path.append(hf_root)
-    import modeling_chatglm, configuration_chatglm
+    basename = os.path.basename(hf_root)
+    sys.path.append(os.path.dirname(hf_root))
+    modeling_chatglm = importlib.import_module(f"{basename}.modeling_chatglm")
+    configuration_chatglm = importlib.import_module(f"{basename}.configuration_chatglm")
 
     # load lit-gpt model
     st = time.time()
@@ -68,7 +71,7 @@ def model_diff(hf_root):
     lit_out = run_lit(input_ids, model, config)
     hf_out = run_hf(input_ids, hf_model, hf_config)
     for k, v in lit_out.items():
-        print(k, v.shape, hf_out[k].shape, v.dtype, hf_out[k].dtype)
+        # print(k, v.shape, hf_out[k].shape, v.dtype, hf_out[k].dtype)
         diff = compare_diff(v, hf_out[k], k)
         print(f"{k} diff: {diff:.6f}")
 

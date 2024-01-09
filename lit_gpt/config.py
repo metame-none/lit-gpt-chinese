@@ -68,6 +68,8 @@ class Config:
     # setting related to baichuan2
     pad_token_id: Optional[int] = None
     lm_head_type: str = "linear"
+    # "rope" or "alibi"
+    position_emb_type: str = "rope"
 
     def __post_init__(self):
         if not self.name:
@@ -1293,9 +1295,8 @@ configs.extend(chatglm_2)
 ###############
 # Baichuan baichuan 2
 ###############
-baichuan_2 = [
-    # https://huggingface.co/baichuan-inc/Baichuan2-7B-Chat/blob/main/config.json
-    dict(
+# https://huggingface.co/baichuan-inc/Baichuan2-7B-Chat/blob/main/config.json
+baichuan_2 = dict(
         # org="baichuan",
         name="baichuan2-7b-chat-hf",
         block_size=4096,
@@ -1317,9 +1318,24 @@ baichuan_2 = [
         pad_token_id=0,
         lm_head_type="norm_head",
     )
-]
-configs.extend(baichuan_2)
+configs.append(baichuan_2)
 
+_baichuan2_7b_base = deepcopy(baichuan_2)
+_baichuan2_7b_base["name"] = "baichuan2-7b-base-hf"
+configs.append(_baichuan2_7b_base)
+
+_baichuan2_13b_chat = deepcopy(baichuan_2)
+_baichuan2_13b_chat["name"] = "baichuan2-13b-chat-hf"
+_baichuan2_13b_chat["n_layer"] = 40
+_baichuan2_13b_chat["n_head"] = 40
+_baichuan2_13b_chat["n_embd"] = 5120
+_baichuan2_13b_chat["position_emb_type"] = "alibi"
+_baichuan2_13b_chat["intermediate_size"] = 13696
+configs.append(_baichuan2_13b_chat)
+
+_baichuan2_13b_base = deepcopy(_baichuan2_13b_chat)
+_baichuan2_13b_base["name"] = "baichuan2-13b-base-hf"
+configs.append(_baichuan2_13b_base)
 
 ###############
 # THUDM chatglm 3

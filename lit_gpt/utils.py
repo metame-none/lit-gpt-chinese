@@ -16,9 +16,18 @@ from lightning.fabric.strategies import FSDPStrategy
 from lightning.fabric.utilities.load import _lazy_load as lazy_load
 from torch.serialization import normalize_storage_type
 from typing_extensions import Self
+from safetensors import safe_open
 
 if TYPE_CHECKING:
     from lit_gpt import GPT
+
+    
+def load_safetensor(path: Path) -> torch.Tensor:
+    tensors = {}
+    with safe_open(path, framework="pt", device="cpu") as f:
+        for key in f.keys():
+            tensors[key] = f.get_tensor(key)
+    return tensors
 
 
 def find_multiple(n: int, k: int) -> int:

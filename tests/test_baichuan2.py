@@ -4,6 +4,7 @@ import os
 import time
 import json
 import torch
+import importlib
 import numpy as np
 import lightning as L
 from pathlib import Path
@@ -13,30 +14,37 @@ from lit_gpt.utils import (
     check_valid_checkpoint_dir,
     lazy_load,
     num_parameters,
+    load_safetensor
 )
 from lit_gpt.tokenizer import Tokenizer
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModelForCausalLM
 import glob
 import contextlib
 import gc
 
 
-def model_diff(hf_root):
+def model_diff(hf_root, num_layer=5, precision="32-true", suffix="bin"):
 
-    sys.path.append(hf_root)
-    import modeling_baichuan, configuration_baichuan
+    basename = os.path.basename(hf_root)
+    model_name = basename
+    sys.path.append(os.path.dirname(hf_root))
+    modeling_baichuan = importlib.import_module(f"{basename}.modeling_baichuan")
+    configuration_baichuan = importlib.import_module(f"{basename}.configuration_baichuan")
 
     # load lit-gpt model
     st = time.time()
-    config = Config.from_name("baichuan2-7b-chat-hf")
-    fabric = L.Fabric(devices=1, precision="32-true")
+    config = Config.from_name(basename)
+    if num_layer is not None:
+        config.n_layer = num_layer
+    fabric = L.Fabric(devices=1, precision=precision)
     with fabric.init_module(empty_init=True):
         model = GPT(config)
 
-    checkpoint_dir = Path("./checkpoints/baichuan/baichuan2-7b-chat-hf")
+    model.eval()
+    checkpoint_dir = Path(hf_root)
     checkpoint_path = checkpoint_dir / "lit_model.pth"
     checkpoint = lazy_load(checkpoint_path)
-    model.load_state_dict(checkpoint)
+    model.load_state_dict(checkpoint, strict=False)
     print(f"load lit-gpt model cost: {time.time() - st:.2f}s")
 
     # load hf model
@@ -45,23 +53,34 @@ def model_diff(hf_root):
     with open(file, 'r') as f:
         cfgs = json.load(f)
     hf_config = configuration_baichuan.BaichuanConfig(**cfgs)
+    if num_layer is not None:
+        hf_config.num_hidden_layers = num_layer
     hf_model = modeling_baichuan.BaichuanForCausalLM(hf_config)
 
-    bin_files = glob.glob(f"{checkpoint_dir}/*.bin")
+    # hf_model = AutoModelForCausalLM.from_pretrained(hf_root,
+    #                                                 torch_type=torch.float16,
+    #                                                 trust_remote_code=True)
+
+    bin_files = glob.glob(f"{checkpoint_dir}/*.{suffix}")
     hf_state_dict = {}
     for bin_file in sorted(bin_files):
         print("Processing", bin_file)
-        hf_weights = lazy_load(bin_file)
+        if suffix == "bin":
+            hf_weights = lazy_load(bin_file)
+        elif suffix == "safetensors":
+            hf_weights = load_safetensor(bin_file)
         hf_state_dict.update(hf_weights)
-    hf_model.load_state_dict(hf_state_dict)
+    hf_model.load_state_dict(hf_state_dict, strict=False)
     hf_model = hf_model.to("cuda:1")
+    hf_model.eval()
     print(f"load hf model cost: {time.time() - hf_load_st:.2f}s")
 
-    token_ids = [53456, 33071, 32884, 31123,  5091,   383,   344, 21590]
+    # token_ids = [53456, 33071, 32884, 31123,  5091,   383,   344, 21590]
+    token_ids = [195,  5987,  2908, 92360, 92880, 93009, 26058, 92422, 92361,   196]
     input_ids = torch.tensor([token_ids])
 
-    lit_out = run_lit(input_ids, model, config)
-    hf_out = run_hf(input_ids, hf_model, hf_config)
+    lit_out = run_lit(input_ids, model, config, model_name)
+    hf_out = run_hf(input_ids, hf_model, hf_config, model_name)
     for k, v in lit_out.items():
         # print(k, v.shape, hf_out[k].shape, v.dtype, hf_out[k].dtype)
         diff = compare_diff(v, hf_out[k], k)
@@ -71,36 +90,52 @@ def model_diff(hf_root):
 
 
 def compare_diff(x, y, key=None):
+    if not isinstance(x, torch.Tensor):
+        print(f"{key} is not tensor")
+        return 0
+
     x = x.cpu().detach().numpy()
-    y = y.reshape(x.shape)
+    if y.shape != x.shape:
+        y = y.reshape(x.shape)
     y = y.cpu().detach().numpy()
     assert x.shape == y.shape, f"{x.shape} != {y.shape}"
     diff = np.abs(x - y).max()
     return diff
 
 
-def run_lit(inputs, model, config):
+def run_lit(inputs, model, config, model_name):
     idx = inputs.to("cuda:0")
     B, T = idx.size()
 
     emb = model.transformer.wte(idx)
 
-    out = model(idx)
+    input_pos = torch.arange(0, T, device=idx.device)
+    model.max_seq_length = 512
+    model.set_kv_cache(batch_size=1, device=idx.device)
+    out = model(idx, input_pos)
     block = model.transformer.h[0]
     norm_1 = block.norm_1(emb)
+    if '13b' in model_name:
+        block_1 = 0
+        alibi_mask = model.future_mask[:config.n_head, :T, :T]
+        mask_1 = alibi_mask[alibi_mask > -1]
+        cos, sin = None, None
+        block_1, *_ = block(emb, cos, sin, alibi_mask)
+    else:
+        cos, sin = model.cos[:T].to(idx.device), model.sin[:T].to(idx.device)
 
-    cos, sin = model.cos[:T].to(idx.device), model.sin[:T].to(idx.device)
-
-    block_1, *_ = block(norm_1, cos, sin)
+        block_1, *_ = block(emb, cos, sin)
+        mask_1 = 0
     return {
         "norm_1": norm_1,
         "emb": emb,
         "out": out,
-        "block_1": block_1
+        "block_1": block_1,
+        "mask_1": mask_1
     }
 
 
-def run_hf(inputs, hf_model, config):
+def run_hf(inputs, hf_model, config, model_name):
     idx = inputs.to("cuda:1")
     B, T = idx.size()
     emb = hf_model.model.embed_tokens(idx)
@@ -112,25 +147,34 @@ def run_hf(inputs, hf_model, config):
     norm_1 = block.input_layernorm(emb)
     batch_size, seq_length = emb.shape[:2]
     past_key_values_length = 0
-    attention_mask = torch.ones(
-            (B, T), dtype=torch.bool, device=emb.device
+    if '13b' in model_name:
+        attention_mask = hf_model.model.get_alibi_mask(emb, T)
+        mask_1 = attention_mask[attention_mask > -1]
+        block_1, *_ = block(emb, attention_mask=attention_mask)
+    else:
+        attention_mask = torch.ones(
+                (B, T), dtype=torch.bool, device=emb.device
+            )
+        attention_mask = hf_model.model._prepare_decoder_attention_mask(
+            attention_mask, (batch_size, seq_length), emb, past_key_values_length
         )
-    attention_mask = hf_model.model._prepare_decoder_attention_mask(
-        attention_mask, (batch_size, seq_length), emb, past_key_values_length
-    )
+        mask_1 = 0
 
-    block_1, *_ = block(norm_1, attention_mask=attention_mask)
+        block_1, *_ = block(emb, attention_mask=attention_mask)
     return {"emb": emb,
             "norm_1": norm_1,
             "out": out,
-            "block_1": block_1
+            "block_1": block_1,
+            "mask_1": mask_1
     }
 
 
 def hf_params(hf_root):
 
-    sys.path.append(hf_root)
-    import modeling_baichuan, configuration_baichuan
+    basename = os.path.basename(hf_root)
+    sys.path.append(os.path.dirname(hf_root))
+    modeling_baichuan = importlib.import_module(f"{basename}.modeling_baichuan")
+    configuration_baichuan = importlib.import_module(f"{basename}.configuration_baichuan")
 
     file = f"{hf_root}/config.json"
     with open(file, 'r') as f:
@@ -141,8 +185,8 @@ def hf_params(hf_root):
         print(f'{name}: {para.size()}')
 
 
-def lit_params():
-    config = Config.from_name("baichuan2-7b-chat-hf")
+def lit_params(hf_root):
+    config = Config.from_name(os.path.basename(hf_root))
     fabric = L.Fabric(devices=1, precision="bf16-true")
     with fabric.init_module(empty_init=True):
         model = GPT(config)

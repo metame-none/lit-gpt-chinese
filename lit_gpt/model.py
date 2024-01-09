@@ -48,18 +48,28 @@ class GPT(nn.Module):
         if value > self.config.block_size:
             raise ValueError(f"Cannot attend to {value}, block size is only {self.config.block_size}")
         self._max_seq_length = value
-        if not hasattr(self, "cos"):
-            # first call
-            cos, sin = self.rope_cache()
-            self.register_buffer("cos", cos, persistent=False)
-            self.register_buffer("sin", sin, persistent=False)
-        # overrides
-        elif self.cos.device.type == "meta":
-            self.cos, self.sin = self.rope_cache()
-        elif value != self.cos.size(0):
-            self.cos, self.sin = self.rope_cache(device=self.cos.device)
-        # the mask and kv cache size will get updated on `set_kv_cache`. we cannot update it here because we don't know
-        # if the kv cache is expected
+        if self.config.position_emb_type == "rope":
+            if not hasattr(self, "cos"):
+                # first call
+                cos, sin = self.rope_cache()
+                self.register_buffer("cos", cos, persistent=False)
+                self.register_buffer("sin", sin, persistent=False)
+            # overrides
+            elif self.cos.device.type == "meta":
+                self.cos, self.sin = self.rope_cache()
+            elif value != self.cos.size(0):
+                self.cos, self.sin = self.rope_cache(device=self.cos.device)
+            # the mask and kv cache size will get updated on `set_kv_cache`. we cannot update it here because we don't know
+            # if the kv cache is expected
+        elif self.config.position_emb_type == "alibi":
+            if not hasattr(self, "future_mask"):
+                self.register_buffer(
+                    "future_mask",
+                    build_alibi_mask(self.config.n_head, value),
+                    persistent=False,
+                )
+            elif value != self.future_mask.size(0):
+                self.future_mask = build_alibi_mask(self.config.n_head, value).to(self.future_mask.device)
 
     def reset_parameters(self) -> None:
         # Trigger resetting the rope-cache
@@ -79,23 +89,70 @@ class GPT(nn.Module):
         if self.max_seq_length < T:
             raise ValueError(f"Cannot forward sequence of length {T}, max seq length is only {self.max_seq_length}.")
 
+        cos, sin = None, None
         if input_pos is not None:  # use the kv cache
-            cos = self.cos.index_select(0, input_pos)
-            sin = self.sin.index_select(0, input_pos)
+            max_pos = torch.max(input_pos)+1
             if self.mask_cache is None:
                 raise TypeError("You need to call `gpt.set_kv_cache()`")
-            mask = self.mask_cache.index_select(2, input_pos)
+            if self.config.position_emb_type == "rope":
+                if self.cos.device != idx.device:
+                    self.cos = self.cos.to(idx.device)
+                    self.sin = self.sin.to(idx.device)
+                cos = self.cos.index_select(0, input_pos)
+                sin = self.sin.index_select(0, input_pos)
+                mask = self.mask_cache.index_select(2, input_pos)
+            elif self.config.position_emb_type == "alibi":
+                mask = self.mask_cache[:, :, :max_pos, :]
         else:
-            cos = self.cos[:T]
-            sin = self.sin[:T]
+            if self.config.position_emb_type == "rope":
+                cos = self.cos[:T]
+                sin = self.sin[:T]
             mask = None
-
+            max_pos = T
+        
         x = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
+
+        if self.config.position_emb_type == "alibi":
+            # TODO(metame): training may be different
+            if self.future_mask.device != x.device:
+                self.future_mask = self.future_mask.to(x.device)
+            alibi_mask = self.future_mask[:self.config.n_head, :max_pos, :max_pos]
+            if mask is not None:
+                mask = mask[..., :max_pos]
+                mask = self.update_attention_mask(x, mask, alibi_mask)
+            else:
+                mask = alibi_mask
+
         for block in self.transformer.h:
             x = block(x, cos, sin, mask, input_pos)
 
         x = self.transformer.ln_f(x)
         return self.lm_head(x)  # (b, t, vocab_size)
+
+    def update_attention_mask(self, inputs_embeds: torch.Tensor, attention_mask: torch.Tensor, 
+                          alibi_mask: torch.Tensor) -> torch.Tensor:
+        if len(attention_mask.shape) == 2:
+                expanded_mask = attention_mask.to(alibi_mask.dtype)
+                expanded_mask = torch.tril(
+                    torch.gt(expanded_mask[:, :, None] * expanded_mask[:, None, :], 0)
+                ) * torch.eq(expanded_mask[:, :, None] - expanded_mask[:, None, :], 0)
+        else:
+            expanded_mask = attention_mask
+
+        if len(expanded_mask.shape) == 3:
+           expanded_mask = expanded_mask.unsqueeze(1)
+        bsz = inputs_embeds.size(0)
+        src_len, tgt_len = alibi_mask.size()[-2:]
+        expanded_mask = (
+            expanded_mask.expand(bsz, 1, src_len, tgt_len)
+            .to(alibi_mask.dtype)
+        )
+        inverted_mask = 1.0 - expanded_mask
+        inverted_mask = inverted_mask.masked_fill(
+            inverted_mask.to(torch.bool), torch.finfo(alibi_mask.dtype).min
+        )
+        attention_mask = inverted_mask + alibi_mask.unsqueeze(0)
+        return attention_mask
 
     @classmethod
     def from_name(cls, name: str, **kwargs: Any) -> Self:
@@ -128,7 +185,7 @@ class GPT(nn.Module):
         device: Optional[torch.device] = None,
         dtype: Optional[torch.dtype] = None,
     ) -> None:
-        if rope_cache_length is None:
+        if rope_cache_length is None and self.config.position_emb_type == "rope":
             rope_cache_length = self.cos.size(-1)
         max_seq_length = self.max_seq_length
 
@@ -229,17 +286,26 @@ class CausalSelfAttention(nn.Module):
         k = k.reshape(B, -1, T, self.config.head_size)  # (B, nh_k, T, hs)
         v = v.reshape(B, -1, T, self.config.head_size)  # (B, nh_v, T, hs)
 
-        q_roped = apply_rope(q[..., : self.config.rope_n_elem], cos, sin, self.config.rope_type)
-        k_roped = apply_rope(k[..., : self.config.rope_n_elem], cos, sin, self.config.rope_type)
-        q = torch.cat((q_roped, q[..., self.config.rope_n_elem :]), dim=-1)
-        k = torch.cat((k_roped, k[..., self.config.rope_n_elem :]), dim=-1)
+        if self.config.position_emb_type == "rope":
+            q_roped = apply_rope(q[..., : self.config.rope_n_elem], cos, sin, self.config.rope_type)
+            k_roped = apply_rope(k[..., : self.config.rope_n_elem], cos, sin, self.config.rope_type)
+            q = torch.cat((q_roped, q[..., self.config.rope_n_elem :]), dim=-1)
+            k = torch.cat((k_roped, k[..., self.config.rope_n_elem :]), dim=-1)
 
         if input_pos is not None:
             if not isinstance(self.kv_cache, KVCache):
                 raise TypeError("You need to call `gpt.set_kv_cache()`")
             k, v = self.kv_cache(input_pos, k, v)
 
-        y = self.scaled_dot_product_attention(q, k, v, mask)
+        if self.config.position_emb_type == "alibi" and "baichuan2-13b" in self.config.name:
+            if input_pos is not None:
+                max_pos = torch.max(input_pos) + 1
+                k = k[:, :, :max_pos, :]
+                v = v[:, :, :max_pos, :]
+            y = self.attention_with_alibi(T, q, k, v, mask)
+        else:
+            y = self.scaled_dot_product_attention(q, k, v, mask)
+        
 
         y = y.reshape(B, T, C)  # re-assemble all head outputs side by side
 
@@ -258,6 +324,32 @@ class CausalSelfAttention(nn.Module):
         )
         return y.transpose(1, 2)
 
+    def attention_with_alibi(self, seq_len: int,
+        query_states: torch.Tensor, key_states: torch.Tensor, value_states: torch.Tensor,
+        attention_mask: torch.Tensor,
+    ) -> torch.Tensor:
+
+        attn_weights = torch.matmul(
+            query_states, key_states.transpose(2, 3)
+        ) / math.sqrt(self.config.head_size)
+
+        if attention_mask is not None:
+            if seq_len == 1:  # inference with cache
+                if len(attention_mask.size()) == 4:
+                    attention_mask = attention_mask[:, :, -1:, :]
+                else:
+                    attention_mask = attention_mask[:, -1:, :]
+            attn_weights = attn_weights + attention_mask
+            attn_weights = torch.max(
+                attn_weights, torch.tensor(torch.finfo(attn_weights.dtype).min)
+            )
+
+        attn_weights = torch.nn.functional.softmax(attn_weights, dim=-1)
+        attn_output = torch.matmul(attn_weights, value_states)
+
+        attn_output = attn_output.transpose(1, 2)
+        return attn_output
+
     def build_kv_cache(
         self,
         batch_size: int,
@@ -268,16 +360,20 @@ class CausalSelfAttention(nn.Module):
     ) -> "KVCache":
         heads = 1 if self.config.n_query_groups == 1 else self.config.n_head
         v_shape = (batch_size, heads, max_seq_length, self.config.head_size)
-        if rope_cache_length is None:
+        if rope_cache_length is None and self.config.position_emb_type == "rope":
             if self.config.rotary_percentage != 1.0:
-                raise TypeError("Please pass the `rope_cache_length=gpt.cos.size(-1)` value")
+                raise TypeError("Please pass the `cache_length=gpt.cos.size(-1)` value")
             k_shape = v_shape
         else:
+            if self.config.position_emb_type == "rope":
+                last_dim = rope_cache_length + self.config.head_size - self.config.rope_n_elem
+            elif self.config.position_emb_type == "alibi":
+                last_dim = self.config.head_size
             k_shape = (
                 batch_size,
                 heads,
                 max_seq_length,
-                rope_cache_length + self.config.head_size - self.config.rope_n_elem,
+                last_dim,
             )
         return KVCache(k_shape, v_shape, device=device, dtype=dtype)
 
@@ -478,3 +574,45 @@ class KVCache(nn.Module):
 def build_mask_cache(max_seq_length: int, device: Optional[torch.device] = None) -> torch.Tensor:
     ones = torch.ones((max_seq_length, max_seq_length), device=device, dtype=torch.bool)
     return torch.tril(ones).unsqueeze(0).unsqueeze(0)
+
+    
+def _get_interleave(n):
+    def _get_interleave_power_of_2(n):
+        start = 2 ** (-(2 ** -(math.log2(n) - 3)))
+        ratio = start
+        return [start * ratio**i for i in range(n)]
+
+    if math.log2(n).is_integer():
+        return _get_interleave_power_of_2(n)
+    else:
+        closest_power_of_2 = 2 ** math.floor(math.log2(n))
+        return (
+            _get_interleave_power_of_2(closest_power_of_2)
+            + _get_interleave(2 * closest_power_of_2)[0::2][: n - closest_power_of_2]
+        )
+
+
+def _fill_with_neg_inf(t):
+    """FP16-compatible function that fills a tensor with -inf."""
+    return t.float().fill_(float("-inf")).type_as(t)
+
+
+def _buffered_future_mask(tensor, maxpos, alibi, attn_heads):
+    _future_mask = torch.triu(_fill_with_neg_inf(torch.zeros([maxpos, maxpos])), 1)
+    _future_mask = _future_mask.unsqueeze(0) + alibi
+    new_future_mask = _future_mask.to(tensor)
+    return new_future_mask[: tensor.shape[0] * attn_heads, :maxpos, :maxpos]
+
+
+def build_alibi_mask(n_head, max_pos):
+    slopes = torch.Tensor(_get_interleave(n_head))
+    position_point = torch.arange(max_pos) - max_pos + 1
+    position_point = position_point.unsqueeze(0).unsqueeze(0).expand(n_head, -1, -1)
+    diag = torch.diag(position_point[0])
+    position_point = position_point - diag.unsqueeze(0).unsqueeze(0).transpose(-1, -2)
+    slopes = slopes.to(position_point.device)
+    alibi = slopes.unsqueeze(1).unsqueeze(1) * position_point
+    alibi = alibi.view(n_head, 1, max_pos)
+    alibi_mask = torch.triu(_fill_with_neg_inf(torch.zeros([max_pos, max_pos])), 1)
+    alibi_mask = alibi_mask.unsqueeze(0) + alibi
+    return alibi_mask

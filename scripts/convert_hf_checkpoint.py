@@ -14,7 +14,7 @@ wd = Path(__file__).parent.parent.resolve()
 sys.path.append(str(wd))
 
 from lit_gpt import Config
-from lit_gpt.utils import incremental_save, lazy_load
+from lit_gpt.utils import incremental_save, lazy_load, load_safetensor
 
 
 def copy_weights_gpt_neox(
@@ -367,6 +367,8 @@ def convert_hf_checkpoint(
     checkpoint_dir: Path = Path("checkpoints/stabilityai/stablelm-base-alpha-3b"),
     model_name: Optional[str] = None,
     dtype: Optional[str] = None,
+    ckpt_suffix: str = "bin",
+    overwrite: bool = False,
 ) -> None:
     if model_name is None:
         model_name = checkpoint_dir.name
@@ -378,6 +380,10 @@ def convert_hf_checkpoint(
     print(f"Model config {config_dict}")
     with open(checkpoint_dir / "lit_config.json", "w") as json_config:
         json.dump(config_dict, json_config)
+
+    if not overwrite and (checkpoint_dir / "lit_model.pth").is_file():
+        print("Checkpoint already exists, set `overwrite=True` to overwrite.")
+        return 
 
     if "falcon" in model_name:
         copy_fn = partial(copy_weights_falcon, model_name)
@@ -404,18 +410,21 @@ def convert_hf_checkpoint(
             bin_index = json.load(json_map)
         bin_files = {checkpoint_dir / bin for bin in bin_index["weight_map"].values()}
     else:
-        bin_files = set(checkpoint_dir.glob("*.bin"))
+        bin_files = set(checkpoint_dir.glob(f"*.{ckpt_suffix}"))
         # some checkpoints serialize the training arguments
         bin_files = {f for f in bin_files if f.name != "training_args.bin"}
     if not bin_files:
-        raise ValueError(f"Expected {str(checkpoint_dir)!r} to contain .bin files")
+        raise ValueError(f"Expected {str(checkpoint_dir)!r} to contain .{ckpt_suffix} files")
 
     with incremental_save(checkpoint_dir / "lit_model.pth") as saver:
         # for checkpoints that split the QKV across several files, we need to keep all the bin files
         # open, so we use `ExitStack` to close them all together at the end
         for bin_file in sorted(bin_files):
             print("Processing", bin_file)
-            hf_weights = lazy_load(bin_file)
+            if bin_file.suffix == ".bin":
+                hf_weights = lazy_load(bin_file)
+            elif bin_file.suffix == ".safetensors":
+                hf_weights = load_safetensor(bin_file)
             copy_fn(sd, hf_weights, saver=saver, dtype=dtype)
         gc.collect()
         print("Saving converted checkpoint")
