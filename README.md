@@ -108,15 +108,6 @@ python chat/base.py --checkpoint_dir ./checkpoints/chatglm/chatglm3-6b-hf  --pre
 - make the following changes to the original model (modeling_chatglm.py):
 
 ```diff
--from .configuration_chatglm import ChatGLMConfig
-+from configuration_chatglm import ChatGLMConfig
-
- # flags required to enable jit fusion kernels
-
-@@ -157,7 +157,7 @@ class RotaryEmbedding(nn.Module):
-         )
-
-
 -@torch.jit.script
 +# @torch.jit.script
  def apply_rotary_pos_emb(x: torch.Tensor, rope_cache: torch.Tensor) -> torch.Tensor:
@@ -125,23 +116,6 @@ python chat/base.py --checkpoint_dir ./checkpoints/chatglm/chatglm3-6b-hf  --pre
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 python tests/test_chatglm3.py model_diff ./checkpoints/chatglm/chatglm3-6b-hf
-```
-
-- for baichuan2 model:
-```diff
---- a/modeling_baichuan.py
-+++ b/modeling_baichuan.py
-@@ -20,8 +20,8 @@
- # limitations under the License.
-
-
--from .configuration_baichuan import BaichuanConfig
--from .generation_utils import build_chat_input, TextIterStreamer
-+from configuration_baichuan import BaichuanConfig
-+from generation_utils import build_chat_input, TextIterStreamer
-
- import math
- from typing import List, Optional, Tuple, Union
 ```
 
 </details>
