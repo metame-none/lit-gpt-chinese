@@ -29,7 +29,6 @@ Supports the following popular model checkpoints (along with all the english mod
 | ChatGLM3                                 | 6B, 6B-Base, 6B-32k | [ChatGLM3](https://github.com/THUDM/ChatGLM3)                                         |
 | ChatGLM2                                 | 6B | [ChatGLM2-6B](https://github.com/THUDM/ChatGLM2-6B)                                         |
 
-
 This implementation extends on [Lit-LLaMA](https://github.com/lightning-AI/lit-llama) and [nanoGPT](https://github.com/karpathy/nanoGPT), and it's **powered by [Lightning Fabric](https://lightning.ai/docs/fabric/stable/) ⚡**.
 
 &nbsp;
@@ -169,6 +168,8 @@ python chat/lora.py --lora_path ./out/lora/belle_chatglm3_6b/lit_model_lora_fine
 ## Reference
 
 For more details, please refer to the [Lit-GPT](https://github.com/Lightning-AI/lit-gpt)
+
+&nbsp;
 
 ## License
 
