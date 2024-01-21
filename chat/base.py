@@ -272,6 +272,29 @@ def encode(checkpoint_dir: Path, tokenizer: Tokenizer, prompt: str, device: torc
         encoded_prompt += tokenizer.encode(prompt, return_tensor=False)
         encoded_prompt += [tokenizer.token_to_id(f"<|assistant|>")]
         encoded_prompt = torch.tensor(encoded_prompt, dtype=torch.int, device=device)
+    elif re.search(r"yi-.*b", checkpoint_name):
+        '''
+        <|im_start|>system
+        {system_message}<|im_end|>
+        <|im_start|>user
+        {prompt}<|im_end|>
+        <|im_start|>assistant
+        '''
+        start_id = tokenizer.token_to_id("<|im_start|>")
+        end_id = tokenizer.token_to_id("<|im_end|>")
+        newline_id = tokenizer.encode("\n", return_tensor=False)
+        encoded_prompt = []
+        for item in history:
+            if item["role"] == "user":
+                encoded_prompt += [start_id] + tokenizer.encode('user\n' + item["content"], return_tensor=False)
+            elif item["role"] == "assistant":
+                encoded_prompt += [start_id] + tokenizer.encode('assistant\n' + item["content"], return_tensor=False)
+            encoded_prompt += [end_id] + newline_id
+
+        encoded_prompt += [start_id] + tokenizer.encode('user\n' + prompt, return_tensor=False)
+        encoded_prompt += [end_id] + newline_id
+        encoded_prompt += [start_id] + tokenizer.encode('assistant\n', return_tensor=False)
+        encoded_prompt = torch.tensor(encoded_prompt, dtype=torch.int, device=device)
     else:
         encoded_prompt = tokenizer.encode(prompt, device=device)
     return encoded_prompt
@@ -476,6 +499,10 @@ def prompt_config(checkpoint_dir: Path, tokenizer: Tokenizer,
     if re.search("chatglm3", checkpoint_name):
         stop_tokens = ([tokenizer.eos_id], [tokenizer.token_to_id("<|user|>")],
                        [tokenizer.token_to_id("<|observation|>")],)
+        return "{prompt}", stop_tokens
+
+    if re.search(r"yi-.*b", checkpoint_name):
+        stop_tokens = ([tokenizer.eos_id],)
         return "{prompt}", stop_tokens
 
     # default format

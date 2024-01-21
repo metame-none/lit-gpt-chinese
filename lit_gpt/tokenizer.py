@@ -65,6 +65,12 @@ class Tokenizer:
             for token in special_tokens:
                 self.special_token_dict[token] = n_words
                 n_words += 1
+        elif "yi" in self.model_name:
+            # '<|im_start|>', '<|im_end|>', '<|im_sep|>', 6,7,8
+            self.special_token_dict = {
+                "<|im_start|>": 6, "<|im_end|>": 7, "<|im_sep|>": 8}
+            self.bos_id = 6
+            self.eos_id = 7
 
         self.special_token_inverse = {v: k for k, v in self.special_token_dict.items()}
 

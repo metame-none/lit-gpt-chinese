@@ -1379,6 +1379,38 @@ _chatglm3_32k["block_size"] = 32768
 configs.append(_chatglm3_base)
 
 
+###############
+# 01/Yi
+###############
+
+yi_6b_chat = dict(
+        name="yi-6b-chat-hf",
+        vocab_size=64000,
+        padding_multiple=64,
+        n_layer=32,
+        n_head=32,
+        n_embd=4096,
+        n_query_groups=4,
+        rotary_percentage=1.0,
+        parallel_residual=False,
+        bias=False,
+        _norm_class="RMSNorm",
+        _mlp_class="LLaMAMLP",
+        intermediate_size=11008,
+        rope_base=5000000,
+        norm_eps=1e-5,
+    )
+configs.append(yi_6b_chat)
+
+yi_34b_chat = deepcopy(yi_6b_chat)
+yi_34b_chat["name"] = "yi-34b-chat-hf"
+yi_34b_chat["n_embd"] = 7168
+yi_34b_chat["intermediate_size"] = 20480
+yi_34b_chat["n_layer"] = 60
+yi_34b_chat["n_head"] = 56
+yi_34b_chat["n_query_groups"] = 8
+configs.append(yi_34b_chat)
+
 ##########################
 # Trelis Function Calling
 ##########################
